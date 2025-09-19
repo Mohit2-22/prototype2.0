@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CivicCare Design System - Professional Government Style */
+
+@layer base {
+  :root {
+    /* Core civic brand colors */
+    --background: 0 0% 100%;
+    --foreground: 218 54% 20%;
+
+    /* Card system */
+    --card: 0 0% 100%;
+    --card-foreground: 218 54% 20%;
+
+    /* Navigation and popovers */
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 54% 20%;
+
+    /* Primary civic blue */
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 217 91% 55%;
+
+    /* Secondary government tones */
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 218 54% 20%;
+
+    /* Muted backgrounds */
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 25% 27%;
+
+    /* Accent colors */
+    --accent: 210 40% 96%;
+    --accent-foreground: 218 54% 20%;
+
+    /* Success green for positive actions */
+    --success: 158 64% 52%;
+    --success-foreground: 0 0% 100%;
+
+    /* Warning and destructive */
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders and inputs */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 217 91% 60%;
+
+    /* Civic gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(217 91% 70%));
+    --gradient-hero: linear-gradient(135deg, hsl(217 91% 60%), hsl(217 91% 45%));
+    
+    /* Shadows */
+    --shadow-card: 0 4px 6px -1px hsl(217 91% 60% / 0.1);
+    --shadow-hover: 0 10px 25px -3px hsl(217 91% 60% / 0.2);
+    
+    /* Animation variables */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Dark mode civic colors */
+    --background: 218 54% 20%;
+    --foreground: 0 0% 95%;
+
+    --card: 218 54% 25%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 218 54% 25%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 217 91% 70%;
+    --primary-foreground: 218 54% 20%;
+    --primary-hover: 217 91% 65%;
+
+    --secondary: 218 54% 30%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 218 54% 30%;
+    --muted-foreground: 220 20% 65%;
+
+    --accent: 218 54% 30%;
+    --accent-foreground: 0 0% 95%;
+
+    --success: 158 64% 52%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 43 96% 60%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 218 54% 35%;
+    --input: 218 54% 35%;
+    --ring: 217 91% 70%;
+
+    /* Dark mode gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 70%), hsl(217 91% 60%));
+    --gradient-hero: linear-gradient(135deg, hsl(217 91% 70%), hsl(217 91% 55%));
+    
+    /* Dark shadows */
+    --shadow-card: 0 4px 6px -1px hsl(218 54% 15% / 0.3);
+    --shadow-hover: 0 10px 25px -3px hsl(218 54% 15% / 0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer components {
+  /* CivicCare custom components */
+  .civic-card {
+    @apply bg-card border border-border rounded-lg shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-hover)] transition-[var(--transition-smooth)];
+  }
+  
+  .civic-button-primary {
+    @apply bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))] px-6 py-3 rounded-lg font-medium transition-[var(--transition-smooth)] shadow-sm hover:shadow-md;
+  }
+  
+  .civic-button-success {
+    @apply bg-success text-success-foreground hover:bg-success/90 px-6 py-3 rounded-lg font-medium transition-[var(--transition-smooth)] shadow-sm hover:shadow-md;
+  }
+  
+  .civic-nav {
+    @apply bg-card/95 backdrop-blur-sm border-b border-border;
+  }
+  
+  .civic-hero {
+    @apply bg-gradient-to-r from-primary to-[hsl(217_91%_45%)] text-primary-foreground;
+  }
+  
+  .civic-stat-card {
+    @apply civic-card p-6 text-center hover:scale-105 transition-transform duration-200;
+  }
+  
+  .civic-input {
+    @apply w-full px-4 py-2 border border-input bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-ring transition-[var(--transition-smooth)];
+  }
+  
+  .civic-badge-pending {
+    @apply bg-warning text-warning-foreground px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .civic-badge-verified {
+    @apply bg-success text-success-foreground px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .civic-badge-rejected {
+    @apply bg-destructive text-destructive-foreground px-3 py-1 rounded-full text-sm font-medium;
+  }
+}
