@@ -1,10 +1,42 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FileText, CheckCircle, Award, ArrowRight } from 'lucide-react';
 import Navigation from '../components/Navigation';
 import StatCard from '../components/StatCard';
 import heroBackground from '../assets/civic-hero-bg.jpg';
+import { authService, reportService, leaderboardService } from '../services/apiService';
 
 const Home = () => {
+  const [stats, setStats] = useState({
+    totalReports: 0,
+    resolutionRate: 0,
+    totalPoints: 0,
+    loading: true
+  });
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [reportStats, leaderboardStats] = await Promise.all([
+          reportService.getPublicReportStats(),
+          leaderboardService.getPublicLeaderboardStats()
+        ]);
+        
+        setStats({
+          totalReports: reportStats.total_reports || 0,
+          resolutionRate: reportStats.resolution_rate || 0,
+          totalPoints: leaderboardStats.total_community_points || 0,
+          loading: false
+        });
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+        setStats(prev => ({ ...prev, loading: false }));
+      }
+    };
+
+    fetchStats();
+  }, []);
+
   return (
     <>
       <Navigation />
@@ -47,19 +79,19 @@ const Home = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <StatCard
               title="Total Reports"
-              value="0"
+              value={stats.loading ? "..." : stats.totalReports.toString()}
               icon={FileText}
               subtitle="Issues reported by citizens"
             />
             <StatCard
               title="Resolution Rate"
-              value="0%"
+              value={stats.loading ? "..." : `${stats.resolutionRate}%`}
               icon={CheckCircle}
               subtitle="Successfully resolved issues"
             />
             <StatCard
               title="Community Points"
-              value="0"
+              value={stats.loading ? "..." : stats.totalPoints.toString()}
               icon={Award}
               subtitle="Earned by active citizens"
             />

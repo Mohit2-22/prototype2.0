@@ -1,58 +1,140 @@
-import { Heart, Users, Award, Calendar, MapPin, Clock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Heart, Users, Award, Calendar, MapPin, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import Navigation from '../components/Navigation';
+import { activityService, authService } from '../services/apiService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Activity {
-  id: string;
+  id: number;
   title: string;
   description: string;
-  points: number;
-  icon: React.ElementType;
+  points_reward: number;
   category: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard';
-  estimatedTime: string;
-  location?: string;
+  max_participants: number;
+  current_participants: number;
+  start_date: string;
+  end_date: string;
+  location: string;
+  requirements: string;
+  contact_info: string;
+  is_active: boolean;
+  created_at: string;
+  category_name?: string;
+}
+
+interface ActivityStats {
+  total_activities: number;
+  user_participations: number;
+  points_earned: number;
+  people_helped: number;
+  community_impact_score: number;
+}
+
+interface Participation {
+  id: number;
+  activity: number;
+  status: 'Registered' | 'Approved' | 'Completed' | 'Cancelled';
+  created_at: string;
+  completed_at?: string;
+  feedback?: string;
+  rating?: number;
 }
 
 const SpecialActivities = () => {
-  const activities: Activity[] = [
-    {
-      id: '1',
-      title: 'Government Event Volunteering',
-      description: 'Participate in local government events, community meetings, and public awareness campaigns. Help organize and support civic initiatives in your area.',
-      points: 0,
-      icon: Users,
-      category: 'Community Service',
-      difficulty: 'Medium',
-      estimatedTime: '3-5 hours',
-      location: 'Various locations',
-    },
-    {
-      id: '2',
-      title: 'Assist Disabled / Blind Citizens',
-      description: 'Provide assistance to disabled and visually impaired citizens with daily activities, navigation, and accessing public services.',
-      points: 0,
-      icon: Heart,
-      category: 'Accessibility Support',
-      difficulty: 'Easy',
-      estimatedTime: '1-2 hours',
-      location: 'Community centers',
-    },
-  ];
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [participations, setParticipations] = useState<Participation[]>([]);
+  const [stats, setStats] = useState<ActivityStats>({
+    total_activities: 0,
+    user_participations: 0,
+    points_earned: 0,
+    people_helped: 0,
+    community_impact_score: 0,
+  });
+  const [loading, setLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { updateUser } = useAuth();
 
-  const handleParticipate = (activityId: string) => {
-    console.log(`Participating in activity: ${activityId}`);
-    // Here you would implement the participation logic
-    alert('Thank you for your interest! You will be contacted with more details soon.');
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [activitiesRes, participationsRes, statsRes] = await Promise.all([
+          activityService.getActivities(),
+          activityService.getMyParticipations(),
+          activityService.getActivityStats(),
+        ]);
+        
+        setActivities(activitiesRes.data || []);
+        setParticipations(participationsRes.data || []);
+        setStats(statsRes.data || {
+          total_activities: 0,
+          user_participations: 0,
+          points_earned: 0,
+          people_helped: 0,
+          community_impact_score: 0,
+        });
+      } catch (err: any) {
+        console.error('Error fetching activities data:', err);
+        setError(err.message || 'Failed to load activities data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
+
+  const handleParticipate = async (activityId: number) => {
+    setSubmitLoading(activityId);
+    setError(null);
+    
+    try {
+      const response = await activityService.participateInActivity(activityId);
+      
+      // Add new participation to the list
+      setParticipations(prev => [...prev, response.data]);
+      
+      // Update activity current participants count
+      setActivities(prev => 
+        prev.map(activity => 
+          activity.id === activityId 
+            ? { ...activity, current_participants: activity.current_participants + 1 }
+            : activity
+        )
+      );
+      
+      // Update user stats
+      setStats(prev => ({
+        ...prev,
+        user_participations: prev.user_participations + 1,
+      }));
+      
+      alert('Successfully registered for the activity! You will be contacted with more details soon.');
+    } catch (err: any) {
+      console.error('Error participating in activity:', err);
+      setError(err.message || 'Failed to register for activity');
+    } finally {
+      setSubmitLoading(null);
+    }
   };
 
-  const getDifficultyColor = (difficulty: Activity['difficulty']) => {
-    switch (difficulty) {
-      case 'Easy':
-        return 'text-success bg-success/10';
-      case 'Medium':
-        return 'text-warning bg-warning/10';
-      case 'Hard':
-        return 'text-destructive bg-destructive/10';
+  const isParticipating = (activityId: number) => {
+    return participations.some(p => p.activity === activityId && p.status !== 'Cancelled');
+  };
+
+  const getActivityIcon = (category: string) => {
+    switch (category.toLowerCase()) {
+      case 'community service':
+        return Users;
+      case 'accessibility support':
+        return Heart;
+      case 'environmental':
+        return Award;
+      default:
+        return Users;
     }
   };
 
@@ -70,37 +152,75 @@ const SpecialActivities = () => {
             </p>
           </div>
 
-          {/* Activity Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            <div className="civic-card p-6 text-center">
-              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Award className="w-6 h-6 text-primary" />
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="w-5 h-5" />
+                <span>{error}</span>
               </div>
-              <h3 className="text-2xl font-bold text-foreground mb-1">0</h3>
-              <p className="text-muted-foreground">Activities Completed</p>
             </div>
-            
-            <div className="civic-card p-6 text-center">
-              <div className="w-12 h-12 bg-success/10 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Users className="w-6 h-6 text-success" />
-              </div>
-              <h3 className="text-2xl font-bold text-foreground mb-1">0</h3>
-              <p className="text-muted-foreground">People Helped</p>
-            </div>
-            
-            <div className="civic-card p-6 text-center">
-              <div className="w-12 h-12 bg-warning/10 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Heart className="w-6 h-6 text-warning" />
-              </div>
-              <h3 className="text-2xl font-bold text-foreground mb-1">0</h3>
-              <p className="text-muted-foreground">Community Impact Score</p>
-            </div>
-          </div>
+          )}
 
-          {/* Activities Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {activities.map((activity) => {
-              const IconComponent = activity.icon;
+          {/* Loading State */}
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <p className="mt-4 text-muted-foreground">Loading activities...</p>
+            </div>
+          ) : (
+            <>
+              {/* Activity Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+                <div className="civic-card p-6 text-center">
+                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <Award className="w-6 h-6 text-primary" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-foreground mb-1">{stats.user_participations}</h3>
+                  <p className="text-muted-foreground">Your Participations</p>
+                </div>
+                
+                <div className="civic-card p-6 text-center">
+                  <div className="w-12 h-12 bg-success/10 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <Users className="w-6 h-6 text-success" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-foreground mb-1">{stats.people_helped}</h3>
+                  <p className="text-muted-foreground">People Helped</p>
+                </div>
+                
+                <div className="civic-card p-6 text-center">
+                  <div className="w-12 h-12 bg-warning/10 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <Heart className="w-6 h-6 text-warning" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-foreground mb-1">{stats.points_earned}</h3>
+                  <p className="text-muted-foreground">Points Earned</p>
+                </div>
+
+                <div className="civic-card p-6 text-center">
+                  <div className="w-12 h-12 bg-purple-500/10 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-6 h-6 text-purple-500" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-foreground mb-1">{stats.total_activities}</h3>
+                  <p className="text-muted-foreground">Available Activities</p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {!loading && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {activities.length === 0 ? (
+                <div className="col-span-full text-center py-12">
+                  <Award className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">No activities available</h3>
+                  <p className="text-muted-foreground">Check back soon for new community activities!</p>
+                </div>
+              ) : (
+                activities.map((activity) => {
+                  const IconComponent = getActivityIcon(activity.category);
+                  const isUserParticipating = isParticipating(activity.id);
+                  const isFull = activity.current_participants >= activity.max_participants;
+                  const isActive = activity.is_active && new Date(activity.end_date) > new Date();
               
               return (
                 <div key={activity.id} className="civic-card p-8">
@@ -121,7 +241,7 @@ const SpecialActivities = () => {
                     
                     <div className="text-right">
                       <div className="text-2xl font-bold text-primary">
-                        {activity.points}
+                                                    {activity.points_reward}
                       </div>
                       <div className="text-sm text-muted-foreground">
                         reward points
@@ -133,22 +253,11 @@ const SpecialActivities = () => {
                     {activity.description}
                   </p>
 
-                  <div className="flex flex-wrap gap-4 mb-6">
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${getDifficultyColor(activity.difficulty)}`}>
-                      {activity.difficulty}
-                    </div>
-                    
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <Clock className="w-4 h-4" />
-                      {activity.estimatedTime}
-                    </div>
-                    
-                    {activity.location && (
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <MapPin className="w-4 h-4" />
-                        {activity.location}
-                      </div>
-                    )}
+                      <div className="flex flex-wrap gap-3 mb-6">
+                        <div className="flex items-center gap-1 px-3 py-1 bg-muted rounded-full text-sm">
+                          <Users className="w-4 h-4" />
+                          {activity.current_participants}/{activity.max_participants}
+                        </div>
                   </div>
 
                   <button
@@ -159,10 +268,10 @@ const SpecialActivities = () => {
                   </button>
                 </div>
               );
-            })}
-          </div>
-
-          {/* Call to Action */}
+                })
+              )}
+            </div>
+          )}          {/* Call to Action */}
           <div className="mt-16 text-center">
             <div className="civic-card p-8 max-w-2xl mx-auto">
               <h2 className="text-2xl font-bold text-foreground mb-4">

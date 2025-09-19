@@ -1,13 +1,30 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Upload, Lock } from 'lucide-react';
 import Navigation from '../components/Navigation';
-import { encryptPassword, validateEmail, validateAadhaar, validatePassword, validatePhone } from '../utils/encryption';
+import { validateEmail, validateAadhaar, validatePassword, validatePhone } from '../utils/encryption';
+import { authService } from '../services/apiService';
+import { useAuth } from '../contexts/AuthContext';
 
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { login, isAuthenticated } = useAuth();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const from = (location.state as any)?.from?.pathname || '/dashboard';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location]);
+  
   const [formData, setFormData] = useState({
+    username: '',
     fullName: '',
     age: '',
     dateOfBirth: '',
@@ -15,6 +32,7 @@ const Login = () => {
     email: '',
     phone: '',
     password: '',
+    passwordConfirm: '',
     aadhaarFile: null as File | null,
   });
 
@@ -28,41 +46,79 @@ const Login = () => {
     setFormData(prev => ({ ...prev, aadhaarFile: file }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
     
-    if (isLogin) {
-      // Login logic
-      console.log('Login attempted with:', {
-        identifier: formData.aadhaar || formData.email,
-        password: encryptPassword(formData.password)
-      });
-    } else {
-      // Signup logic
-      if (!validateEmail(formData.email)) {
-        alert('Please enter a valid email address');
-        return;
+    try {
+      if (isLogin) {
+        // Login logic
+        const identifier = formData.aadhaar || formData.email || formData.username;
+        if (!identifier || !formData.password) {
+          setError('Please fill in all required fields');
+          return;
+        }
+        
+        const response = await authService.login(identifier, formData.password);
+        
+        if (response.token && response.user) {
+          login(response.token, response.user);
+          const from = (location.state as any)?.from?.pathname || '/dashboard';
+          navigate(from, { replace: true });
+        }
+      } else {
+        // Signup logic - validation
+        if (!validateEmail(formData.email)) {
+          setError('Please enter a valid email address');
+          return;
+        }
+        
+        if (!validatePassword(formData.password)) {
+          setError('Password must be at least 6 characters long');
+          return;
+        }
+        
+        if (formData.password !== formData.passwordConfirm) {
+          setError('Passwords do not match');
+          return;
+        }
+        
+        if (!validateAadhaar(formData.aadhaar)) {
+          setError('Please enter a valid 12-digit Aadhaar number');
+          return;
+        }
+        
+        if (!validatePhone(formData.phone)) {
+          setError('Please enter a valid 10-digit phone number');
+          return;
+        }
+        
+        const signupData = {
+          username: formData.username || formData.email.split('@')[0],
+          email: formData.email,
+          password: formData.password,
+          password_confirm: formData.passwordConfirm,
+          full_name: formData.fullName,
+          age: formData.age ? parseInt(formData.age) : null,
+          date_of_birth: formData.dateOfBirth || null,
+          aadhaar: formData.aadhaar,
+          phone: formData.phone,
+          aadhaar_document: formData.aadhaarFile,
+        };
+        
+        const response = await authService.register(signupData);
+        
+        if (response.token && response.user) {
+          login(response.token, response.user);
+          const from = (location.state as any)?.from?.pathname || '/dashboard';
+          navigate(from, { replace: true });
+        }
       }
-      
-      if (!validatePassword(formData.password)) {
-        alert('Password must be at least 6 characters long');
-        return;
-      }
-      
-      if (!validateAadhaar(formData.aadhaar)) {
-        alert('Please enter a valid 12-digit Aadhaar number');
-        return;
-      }
-      
-      if (!validatePhone(formData.phone)) {
-        alert('Please enter a valid 10-digit phone number');
-        return;
-      }
-      
-      console.log('Signup attempted with:', {
-        ...formData,
-        password: encryptPassword(formData.password)
-      });
+    } catch (err: any) {
+      setError(err.message || 'An error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -82,6 +138,12 @@ const Login = () => {
               </p>
             </div>
 
+            {error && (
+              <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded-md mb-6">
+                {error}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-6">
               {!isLogin && (
                 <>
@@ -93,6 +155,20 @@ const Login = () => {
                       type="text"
                       name="fullName"
                       value={formData.fullName}
+                      onChange={handleInputChange}
+                      className="civic-input"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Username
+                    </label>
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
                       onChange={handleInputChange}
                       className="civic-input"
                       required
@@ -234,8 +310,28 @@ const Login = () => {
                 )}
               </div>
 
-              <button type="submit" className="w-full civic-button-primary">
-                {isLogin ? 'Sign In' : 'Create Account'}
+              {!isLogin && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Confirm Password
+                  </label>
+                  <input
+                    type="password"
+                    name="passwordConfirm"
+                    value={formData.passwordConfirm}
+                    onChange={handleInputChange}
+                    className="civic-input"
+                    required
+                  />
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                className="w-full civic-button-primary"
+                disabled={loading}
+              >
+                {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
               </button>
             </form>
 

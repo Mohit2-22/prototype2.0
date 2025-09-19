@@ -1,20 +1,33 @@
-import { useState } from 'react';
-import { Upload, MapPin, Camera, FileText, Clock, CheckCircle, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Upload, MapPin, Camera, FileText, Clock, CheckCircle, X, AlertTriangle } from 'lucide-react';
 import Navigation from '../components/Navigation';
 import StatCard from '../components/StatCard';
+import { reportService, authService } from '../services/apiService';
 
 interface Report {
-  id: string;
-  category: string;
+  id: number;
+  title: string;
   description: string;
+  category: number;
   location: string;
-  status: 'Pending' | 'Verified' | 'Rejected';
-  date: string;
+  status: 'Pending' | 'Verified' | 'In Progress' | 'Resolved' | 'Rejected';
+  created_at: string;
+  updated_at: string;
   image?: string;
+  video?: string;
+  category_name?: string;
+  upvotes?: number;
+}
+
+interface ReportCategory {
+  id: number;
+  name: string;
+  description: string;
 }
 
 const Dashboard = () => {
   const [formData, setFormData] = useState({
+    title: '',
     category: '',
     description: '',
     location: '',
@@ -22,9 +35,48 @@ const Dashboard = () => {
     video: null as File | null,
   });
 
-  const [reports, setReports] = useState<Report[]>([
-    // Sample data - would come from backend
-  ]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [categories, setCategories] = useState<ReportCategory[]>([]);
+  const [userStats, setUserStats] = useState({
+    total_reports: 0,
+    total_points: 0,
+    reports_verified: 0,
+    reports_pending: 0,
+  });
+  const [loading, setLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [reportsRes, categoriesRes, statsRes] = await Promise.all([
+          reportService.getReports({ my_reports: 'true' }),
+          reportService.getCategories(),
+          authService.getUserStats(),
+        ]);
+        
+        setReports(reportsRes.data || []);
+        setCategories(categoriesRes.data || []);
+        setUserStats(statsRes.data || {
+          total_reports: 0,
+          total_points: 0,
+          reports_verified: 0,
+          reports_pending: 0,
+        });
+      } catch (err: any) {
+        console.error('Error fetching dashboard data:', err);
+        setError(err.message || 'Failed to load dashboard data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -36,32 +88,60 @@ const Dashboard = () => {
     setFormData(prev => ({ ...prev, [type]: file }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const newReport: Report = {
-      id: Date.now().toString(),
-      category: formData.category,
-      description: formData.description,
-      location: formData.location,
-      status: 'Pending',
-      date: new Date().toLocaleDateString(),
-    };
+    if (!formData.title.trim() || !formData.category || !formData.description.trim() || !formData.location.trim()) {
+      setError('Please fill in all required fields');
+      return;
+    }
     
-    setReports(prev => [newReport, ...prev]);
+    setSubmitLoading(true);
+    setError(null);
     
-    // Reset form
-    setFormData({
-      category: '',
-      description: '',
-      location: '',
-      image: null,
-      video: null,
-    });
-    
-    // Reset file inputs
-    const fileInputs = document.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>;
-    fileInputs.forEach(input => input.value = '');
+    try {
+      const reportData = {
+        title: formData.title,
+        category: parseInt(formData.category),
+        description: formData.description,
+        location: formData.location,
+        image: formData.image,
+        video: formData.video,
+      };
+      
+      const response = await reportService.createReport(reportData);
+      
+      // Add new report to the list
+      setReports(prev => [response.data, ...prev]);
+      
+      // Update user stats
+      setUserStats(prev => ({
+        ...prev,
+        total_reports: prev.total_reports + 1,
+        reports_pending: prev.reports_pending + 1,
+      }));
+      
+      // Reset form
+      setFormData({
+        title: '',
+        category: '',
+        description: '',
+        location: '',
+        image: null,
+        video: null,
+      });
+      
+      // Reset file inputs
+      const fileInputs = document.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>;
+      fileInputs.forEach(input => input.value = '');
+      
+      alert('Report submitted successfully!');
+    } catch (err: any) {
+      console.error('Error submitting report:', err);
+      setError(err.message || 'Failed to submit report');
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   const getStatusBadge = (status: Report['status']) => {
@@ -70,6 +150,10 @@ const Dashboard = () => {
         return <span className="civic-badge-pending">Pending</span>;
       case 'Verified':
         return <span className="civic-badge-verified">Verified</span>;
+      case 'In Progress':
+        return <span className="civic-badge-pending">In Progress</span>;
+      case 'Resolved':
+        return <span className="civic-badge-verified">Resolved</span>;
       case 'Rejected':
         return <span className="civic-badge-rejected">Rejected</span>;
     }
@@ -80,6 +164,10 @@ const Dashboard = () => {
       case 'Pending':
         return <Clock className="w-5 h-5 text-warning" />;
       case 'Verified':
+        return <CheckCircle className="w-5 h-5 text-success" />;
+      case 'In Progress':
+        return <AlertTriangle className="w-5 h-5 text-blue-500" />;
+      case 'Resolved':
         return <CheckCircle className="w-5 h-5 text-success" />;
       case 'Rejected':
         return <X className="w-5 h-5 text-destructive" />;
@@ -97,28 +185,55 @@ const Dashboard = () => {
             <p className="text-muted-foreground">Report issues and track your community contributions</p>
           </div>
 
-          {/* User Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <StatCard
-              title="Your Reports"
-              value={reports.length}
-              icon={FileText}
-            />
-            <StatCard
-              title="Verified Reports"
-              value={reports.filter(r => r.status === 'Verified').length}
-              icon={CheckCircle}
-            />
-            <StatCard
-              title="Your Points"
-              value="0"
-              icon={Clock}
-            />
-          </div>
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+              <div className="flex items-center gap-2 text-destructive">
+                <X className="w-5 h-5" />
+                <span>{error}</span>
+              </div>
+            </div>
+          )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Report Form */}
-            <div className="civic-card p-6">
+          {/* Loading State */}
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <p className="mt-4 text-muted-foreground">Loading dashboard...</p>
+            </div>
+          ) : (
+            <>
+              {/* User Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <StatCard
+                  title="Total Reports"
+                  value={userStats.total_reports}
+                  icon={FileText}
+                  subtitle="Issues you've reported"
+                />
+                <StatCard
+                  title="Verified Reports"
+                  value={userStats.reports_verified}
+                  icon={CheckCircle}
+                  subtitle="Successfully verified"
+                />
+                <StatCard
+                  title="Pending Reports"
+                  value={userStats.reports_pending}
+                  icon={Clock}
+                  subtitle="Awaiting review"
+                />
+                <StatCard
+                  title="Your Points"
+                  value={userStats.total_points}
+                  icon={FileText}
+                  subtitle="Civic engagement points"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Report Form */}
+                <div className="civic-card p-6">
               <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
                 <FileText className="w-6 h-6 text-primary" />
                 Submit New Report
@@ -127,7 +242,22 @@ const Dashboard = () => {
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">
-                    Category
+                    Report Title *
+                  </label>
+                  <input
+                    type="text"
+                    name="title"
+                    value={formData.title}
+                    onChange={handleInputChange}
+                    className="civic-input"
+                    placeholder="Brief title of the issue"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Category *
                   </label>
                   <select
                     name="category"
@@ -137,16 +267,17 @@ const Dashboard = () => {
                     required
                   >
                     <option value="">Select category</option>
-                    <option value="pothole">Pothole</option>
-                    <option value="garbage">Garbage Collection</option>
-                    <option value="streetlight">Street Light</option>
-                    <option value="other">Other</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">
-                    Description
+                    Description *
                   </label>
                   <textarea
                     name="description"
@@ -208,51 +339,67 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                <button type="submit" className="w-full civic-button-primary">
-                  Submit Report
+                <button 
+                  type="submit" 
+                  className="w-full civic-button-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={submitLoading}
+                >
+                  {submitLoading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Submitting...</span>
+                    </div>
+                  ) : (
+                    'Submit Report'
+                  )}
                 </button>
               </form>
             </div>
 
-            {/* Reports List */}
-            <div className="civic-card p-6">
-              <h2 className="text-2xl font-semibold mb-6">Your Reports</h2>
-              
-              {reports.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-foreground mb-2">No reports yet</h3>
-                  <p className="text-muted-foreground">Submit your first civic issue report to get started</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {reports.map((report) => (
-                    <div key={report.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(report.status)}
-                          <h3 className="font-medium text-foreground capitalize">{report.category}</h3>
+              {/* Reports List */}
+              <div className="civic-card p-6">
+                <h2 className="text-2xl font-semibold mb-6">Your Reports</h2>
+                
+                {reports.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-foreground mb-2">No reports yet</h3>
+                    <p className="text-muted-foreground">Submit your first civic issue report to get started</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {reports.map((report) => (
+                      <div key={report.id} className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {getStatusIcon(report.status)}
+                            <h3 className="font-medium text-foreground">{report.title}</h3>
+                          </div>
+                          {getStatusBadge(report.status)}
                         </div>
-                        {getStatusBadge(report.status)}
-                      </div>
-                      
-                      <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
-                        {report.description}
-                      </p>
-                      
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          <span>{report.location}</span>
+                        
+                        <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
+                          {report.description}
+                        </p>
+                        
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            <span>{report.location}</span>
+                          </div>
+                          <div className="flex flex-col text-right">
+                            <span>{report.category_name}</span>
+                            <span>{new Date(report.created_at).toLocaleDateString()}</span>
+                          </div>
                         </div>
-                        <span>{report.date}</span>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
     </>

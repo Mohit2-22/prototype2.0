@@ -1,12 +1,19 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Home, BarChart3, Award, Trophy, Phone, User } from 'lucide-react';
+import { Menu, X, Home, BarChart3, Award, Trophy, Phone, User, LogOut, Settings } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const { isAuthenticated, user, logout } = useAuth();
   
-  const navItems = [
+  const publicNavItems = [
+    { path: '/', label: 'Home', icon: Home },
+    { path: '/contact', label: 'Contact Us', icon: Phone },
+  ];
+
+  const authenticatedNavItems = [
     { path: '/', label: 'Home', icon: Home },
     { path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
     { path: '/special', label: 'Special Activities', icon: Award },
@@ -14,7 +21,17 @@ const Navigation = () => {
     { path: '/contact', label: 'Contact Us', icon: Phone },
   ];
 
+  const navItems = isAuthenticated ? authenticatedNavItems : publicNavItems;
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
 
   return (
     <nav className="civic-nav sticky top-0 z-50">
@@ -44,13 +61,29 @@ const Navigation = () => {
                 <span>{label}</span>
               </Link>
             ))}
-            <Link
-              to="/login"
-              className="civic-button-primary flex items-center space-x-1"
-            >
-              <User className="w-4 h-4" />
-              <span>Login</span>
-            </Link>
+            
+            {isAuthenticated ? (
+              <div className="flex items-center space-x-4">
+                <div className="text-sm text-foreground">
+                  Welcome, <span className="font-medium">{user?.full_name || user?.username}</span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="civic-button-primary flex items-center space-x-1"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/login"
+                className="civic-button-primary flex items-center space-x-1"
+              >
+                <User className="w-4 h-4" />
+                <span>Login</span>
+              </Link>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -80,14 +113,30 @@ const Navigation = () => {
                 <span>{label}</span>
               </Link>
             ))}
-            <Link
-              to="/login"
-              className="flex items-center space-x-2 mt-4 px-4 py-3 bg-primary text-primary-foreground rounded-lg font-medium"
-              onClick={() => setIsOpen(false)}
-            >
-              <User className="w-5 h-5" />
-              <span>Login</span>
-            </Link>
+            
+            {isAuthenticated ? (
+              <div className="mt-4 space-y-3">
+                <div className="px-4 py-2 text-sm text-foreground">
+                  Welcome, <span className="font-medium">{user?.full_name || user?.username}</span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center space-x-2 w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg font-medium"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/login"
+                className="flex items-center space-x-2 mt-4 px-4 py-3 bg-primary text-primary-foreground rounded-lg font-medium"
+                onClick={() => setIsOpen(false)}
+              >
+                <User className="w-5 h-5" />
+                <span>Login</span>
+              </Link>
+            )}
           </div>
         )}
       </div>
