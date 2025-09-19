@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, isLoading } = useAuth();
   
   const publicNavItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -75,6 +75,11 @@ const Navigation = () => {
                   <span>Logout</span>
                 </button>
               </div>
+            ) : isLoading ? (
+              <div className="flex items-center space-x-2">
+                <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                <span className="text-sm text-muted-foreground">Loading...</span>
+              </div>
             ) : (
               <Link
                 to="/login"
@@ -126,6 +131,11 @@ const Navigation = () => {
                   <LogOut className="w-5 h-5" />
                   <span>Logout</span>
                 </button>
+              </div>
+            ) : isLoading ? (
+              <div className="mt-4 flex items-center justify-center space-x-2 px-4 py-3">
+                <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                <span className="text-sm text-muted-foreground">Loading...</span>
               </div>
             ) : (
               <Link

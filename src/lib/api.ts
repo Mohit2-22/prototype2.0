@@ -1,5 +1,5 @@
 // API Configuration and Base URL
-export const API_BASE_URL = 'http://localhost:8000/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 // API Endpoints
 export const API_ENDPOINTS = {
@@ -42,7 +42,12 @@ export const API_ENDPOINTS = {
 
 // Get token from localStorage
 export const getAuthToken = (): string | null => {
-  return localStorage.getItem('authToken');
+  const token = localStorage.getItem('authToken');
+  console.log('getAuthToken called, token exists:', !!token);
+  if (token) {
+    console.log('Token preview:', token.substring(0, 20) + '...');
+  }
+  return token;
 };
 
 // Set token in localStorage

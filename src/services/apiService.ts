@@ -8,26 +8,70 @@ async function apiRequest(
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getAuthToken();
   
+  // Build headers conditionally: if the body is FormData, do NOT set Content-Type
+  const isFormData = options.body instanceof FormData;
+  const baseHeaders: Record<string, string> = {};
+  if (!isFormData) {
+    baseHeaders['Content-Type'] = 'application/json';
+  }
+  if (token) {
+    baseHeaders['Authorization'] = `Token ${token}`;
+  }
+
   const config: RequestInit = {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Token ${token}` }),
+      ...baseHeaders,
       ...options.headers,
     },
   };
   
   try {
+    console.log('Making API request to:', url);
+    console.log('Config:', config);
+    
     const response = await fetch(url, config);
+    
+    console.log('Response status:', response.status);
+    console.log('Response headers:', response.headers);
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      console.error('API Error Response:', errorData);
+      
+      // Handle validation errors specifically
+      if (response.status === 400 && errorData) {
+        const errorMessages = [];
+        
+        // Extract field-specific errors
+        if (typeof errorData === 'object') {
+          for (const [field, errors] of Object.entries(errorData)) {
+            if (Array.isArray(errors)) {
+              errorMessages.push(`${field}: ${errors.join(', ')}`);
+            } else if (typeof errors === 'string') {
+              errorMessages.push(`${field}: ${errors}`);
+            }
+          }
+        }
+        
+        if (errorMessages.length > 0) {
+          throw new Error(`Validation errors: ${errorMessages.join('; ')}`);
+        }
+      }
+      
+      const errorMessage = errorData.message || errorData.detail || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
     }
-    
-    return await response.json();
-  } catch (error) {
+
+    const responseData = await response.json();
+    console.log('API Response data:', responseData);
+    return responseData;
+  } catch (error: any) {
     console.error('API Request Error:', error);
+    // Preserve the original error message for better debugging
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error('Network error: Unable to connect to server. Please check if the backend is running.');
+    }
     throw error;
   }
 }
@@ -89,6 +133,8 @@ export const reportService = {
   },
   
   createReport: async (reportData: any) => {
+    console.log('Creating report with data:', reportData);
+    
     const formData = new FormData();
     Object.keys(reportData).forEach(key => {
       if (reportData[key] !== null && reportData[key] !== undefined) {
@@ -96,11 +142,34 @@ export const reportService = {
       }
     });
     
-    return apiRequest('/reports/', {
+    console.log('FormData entries:');
+    for (let [key, value] of formData.entries()) {
+      console.log(key, value);
+    }
+    
+    const response = await apiRequest('/reports/', {
       method: 'POST',
       body: formData,
       headers: {}, // Remove Content-Type for FormData
     });
+    
+    console.log('Create report response:', response);
+    
+    // Normalize response format - Django might return the object directly or wrapped
+    if (response && typeof response === 'object') {
+      // If response has an id, it's the report object
+      if (response.id) {
+        return { data: response };
+      }
+      // If response has a data property, use it
+      if (response.data) {
+        return response;
+      }
+      // Otherwise, assume the response is the report object
+      return { data: response };
+    }
+    
+    return response;
   },
   
   getReportDetail: async (id: number) => {
@@ -119,7 +188,12 @@ export const reportService = {
   },
   
   getCategories: async () => {
-    return apiRequest('/reports/categories/');
+    const res = await apiRequest('/reports/categories/');
+    // Support both paginated ({results: []}) and plain list ([] or {data: []}) formats
+    if (Array.isArray(res)) return { data: res };
+    if (res?.results) return { data: res.results };
+    if (res?.data) return { data: res.data };
+    return { data: [] };
   },
   
   getReportStats: async () => {

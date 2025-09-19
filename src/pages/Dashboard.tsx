@@ -3,6 +3,8 @@ import { Upload, MapPin, Camera, FileText, Clock, CheckCircle, X, AlertTriangle 
 import Navigation from '../components/Navigation';
 import StatCard from '../components/StatCard';
 import { reportService, authService } from '../services/apiService';
+import { useAuth } from '../contexts/AuthContext';
+import { Link } from 'react-router-dom';
 
 interface Report {
   id: number;
@@ -26,6 +28,8 @@ interface ReportCategory {
 }
 
 const Dashboard = () => {
+  const { isAuthenticated, user } = useAuth();
+  
   const [formData, setFormData] = useState({
     title: '',
     category: '',
@@ -46,30 +50,77 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Fallback categories in case API fails
+  const fallbackCategories: ReportCategory[] = [
+    { id: 1, name: 'Road Issues', description: 'Potholes, damaged roads, traffic signals' },
+    { id: 2, name: 'Garbage & Sanitation', description: 'Waste collection, drainage, cleanliness' },
+    { id: 3, name: 'Street Lighting', description: 'Broken street lights, dark areas' },
+    { id: 4, name: 'Water Supply', description: 'Water shortage, leakage, quality issues' },
+    { id: 5, name: 'Public Safety', description: 'Security concerns, emergency services' },
+    { id: 6, name: 'Parks & Recreation', description: 'Public parks, playgrounds, maintenance' },
+    { id: 7, name: 'Public Transport', description: 'Bus stops, transport services, accessibility' },
+    { id: 8, name: 'Other', description: 'Other civic issues not listed above' }
+  ];
 
   // Fetch data on component mount
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
+      
+      console.log('Dashboard: Fetching data...');
+      console.log('Auth token:', localStorage.getItem('authToken'));
+      console.log('Is authenticated:', isAuthenticated);
+      
       try {
-        const [reportsRes, categoriesRes, statsRes] = await Promise.all([
-          reportService.getReports({ my_reports: 'true' }),
-          reportService.getCategories(),
-          authService.getUserStats(),
-        ]);
+        // Always try to fetch categories first (now public endpoint)
+        let categoriesData = [];
+        try {
+          const categoriesRes = await reportService.getCategories();
+          categoriesData = categoriesRes.data || [];
+        } catch (catError) {
+          categoriesData = fallbackCategories;
+        }
         
-        setReports(reportsRes.data || []);
-        setCategories(categoriesRes.data || []);
-        setUserStats(statsRes.data || {
-          total_reports: 0,
-          total_points: 0,
-          reports_verified: 0,
-          reports_pending: 0,
-        });
+        // Set categories regardless of auth status
+        setCategories(categoriesData);
+        console.log('Dashboard: Categories set to:', categoriesData);
+
+        // Only fetch user-specific data if authenticated
+        if (isAuthenticated) {
+          const [reportsRes, statsRes] = await Promise.all([
+            reportService.getReports({ my_reports: 'true' }),
+            authService.getUserStats(),
+          ]);
+          
+          console.log('Dashboard: User data fetched successfully');
+          
+          setReports(reportsRes.data || reportsRes.results || []);
+          setUserStats(statsRes.data || {
+            total_reports: 0,
+            total_points: 0,
+            reports_verified: 0,
+            reports_pending: 0,
+          });
+        } else {
+          console.log('Dashboard: User not authenticated, showing empty user data');
+          setReports([]);
+          setUserStats({
+            total_reports: 0,
+            total_points: 0,
+            reports_verified: 0,
+            reports_pending: 0,
+          });
+        }
+        
       } catch (err: any) {
-        console.error('Error fetching dashboard data:', err);
-        setError(err.message || 'Failed to load dashboard data');
+  setError(err.message || 'Failed to load dashboard data.');
+        // Ensure categories are available even if other data fails
+        if (categories.length === 0) {
+          setCategories(fallbackCategories);
+        }
       } finally {
         setLoading(false);
       }
@@ -81,6 +132,10 @@ const Dashboard = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear messages when user starts typing
+    if (error) setError(null);
+    if (successMessage) setSuccessMessage(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'video') => {
@@ -96,8 +151,14 @@ const Dashboard = () => {
       return;
     }
     
+    if (formData.description.trim().length < 10) {
+      setError('Description must be at least 10 characters long');
+      return;
+    }
+    
     setSubmitLoading(true);
     setError(null);
+    setSuccessMessage(null);
     
     try {
       const reportData = {
@@ -109,10 +170,35 @@ const Dashboard = () => {
         video: formData.video,
       };
       
-      const response = await reportService.createReport(reportData);
+      console.log('Submitting report:', reportData);
+      console.log('Auth token:', localStorage.getItem('authToken'));
       
-      // Add new report to the list
-      setReports(prev => [response.data, ...prev]);
+      const response = await reportService.createReport(reportData);
+      console.log('Report creation response:', response);
+      
+      // Handle different response formats from backend
+      let reportData_created;
+      if (response?.data?.id) {
+        reportData_created = response.data;
+      } else if (response?.id) {
+        reportData_created = response;
+      } else {
+        // If we get here, check if the response at least indicates success
+        console.warn('Unexpected response format, but proceeding:', response);
+        // Create a mock report object for UI update
+        reportData_created = {
+          id: Date.now(), // temporary ID
+          title: formData.title,
+          description: formData.description,
+          location: formData.location,
+          status: 'Pending',
+          created_at: new Date().toISOString(),
+          category_name: categories.find(c => c.id.toString() === formData.category)?.name || 'Unknown'
+        };
+      }
+      
+      // Update UI with the created report
+      setReports(prev => [reportData_created, ...prev]);
       
       // Update user stats
       setUserStats(prev => ({
@@ -135,10 +221,17 @@ const Dashboard = () => {
       const fileInputs = document.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>;
       fileInputs.forEach(input => input.value = '');
       
-      alert('Report submitted successfully!');
+      setSuccessMessage('Report submitted successfully!');
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccessMessage(null), 5000);
     } catch (err: any) {
       console.error('Error submitting report:', err);
-      setError(err.message || 'Failed to submit report');
+      if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+        setError('You must be logged in to submit reports. Please log in and try again.');
+      } else {
+        setError(err.message || 'Failed to submit report. Please try again.');
+      }
     } finally {
       setSubmitLoading(false);
     }
@@ -185,12 +278,44 @@ const Dashboard = () => {
             <p className="text-muted-foreground">Report issues and track your community contributions</p>
           </div>
 
+          {/* Authentication Warning */}
+          {!isAuthenticated && (
+            <div className="mb-6 p-6 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-6 h-6 text-amber-600 mt-0.5" />
+                <div>
+                  <h3 className="text-lg font-semibold text-amber-800 mb-2">Authentication Required</h3>
+                  <p className="text-amber-700 mb-4">
+                    You need to be logged in to submit reports and view your dashboard data. 
+                    Please log in to access all features.
+                  </p>
+                  <Link 
+                    to="/login" 
+                    className="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                  >
+                    Go to Login
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Error Display */}
           {error && (
             <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
               <div className="flex items-center gap-2 text-destructive">
                 <X className="w-5 h-5" />
                 <span>{error}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Success Display */}
+          {successMessage && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-2 text-green-700">
+                <CheckCircle className="w-5 h-5" />
+                <span>{successMessage}</span>
               </div>
             </div>
           )}
@@ -284,9 +409,14 @@ const Dashboard = () => {
                     value={formData.description}
                     onChange={handleInputChange}
                     className="civic-input min-h-[100px] resize-y"
-                    placeholder="Describe the issue in detail..."
+                    placeholder="Describe the issue in detail... (minimum 10 characters)"
                     required
                   />
+                  {formData.description && formData.description.length < 10 && (
+                    <p className="text-sm text-amber-600 mt-1">
+                      {10 - formData.description.length} more characters needed
+                    </p>
+                  )}
                 </div>
 
                 <div>

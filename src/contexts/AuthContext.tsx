@@ -41,25 +41,92 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const isAuthenticated = !!user;
 
   useEffect(() => {
+    let cancelled = false;
+
+    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
     const initializeAuth = async () => {
+      console.log('AuthContext: Initializing authentication...');
       const token = getAuthToken();
-      if (token) {
+      const cachedUserRaw = localStorage.getItem('authUser');
+      
+      if (token && cachedUserRaw) {
         try {
-          const response = await authService.getProfile();
-          setUser(response.data);
-        } catch (error) {
-          console.error('Failed to fetch user profile:', error);
-          removeAuthToken();
+          const cachedUser = JSON.parse(cachedUserRaw);
+          console.log('AuthContext: Restoring cached user:', cachedUser.username);
+          setUser(cachedUser); // Immediate optimistic restore
+        } catch {
+          console.warn('AuthContext: Invalid cached user data, removing...');
+          localStorage.removeItem('authUser');
         }
       }
-      setIsLoading(false);
+
+      if (!token) {
+        console.log('AuthContext: No token found, user not authenticated');
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('AuthContext: Token found, fetching fresh profile...');
+      // Retry profile fetch up to 3 times on network errors
+      let attempts = 0;
+      while (attempts < 3 && !cancelled) {
+        try {
+          const response = await authService.getProfile();
+          if (cancelled) return;
+          
+          console.log('AuthContext: Profile fetch successful:', response.data.username);
+          setUser(response.data);
+          localStorage.setItem('authUser', JSON.stringify(response.data));
+          break;
+        } catch (error: any) {
+          const msg = error?.message || '';
+          console.error(`AuthContext: Profile fetch attempt ${attempts + 1} failed:`, msg);
+          
+          if (msg.includes('401') || msg.includes('403') || msg.includes('Unauthorized')) {
+            console.log('AuthContext: Authentication invalid, clearing session...');
+            removeAuthToken();
+            localStorage.removeItem('authUser');
+            setUser(null);
+            break;
+          }
+          
+          attempts += 1;
+          if (attempts < 3) {
+            console.log(`AuthContext: Retrying in ${400 * attempts}ms...`);
+            await delay(400 * attempts); // backoff
+            continue;
+          } else {
+            console.error('AuthContext: All profile fetch attempts failed');
+          }
+        }
+      }
+      if (!cancelled) {
+        console.log('AuthContext: Initialization complete');
+        setIsLoading(false);
+      }
     };
 
     initializeAuth();
+
+    const storageListener = (e: StorageEvent) => {
+      if (e.key === 'authToken' && !e.newValue) {
+        setUser(null);
+      }
+      if (e.key === 'authUser' && e.newValue) {
+        try { setUser(JSON.parse(e.newValue)); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener('storage', storageListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('storage', storageListener);
+    };
   }, []);
 
   const login = (token: string, userData: User) => {
     localStorage.setItem('authToken', token);
+    localStorage.setItem('authUser', JSON.stringify(userData));
     setUser(userData);
   };
 
@@ -70,12 +137,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       console.error('Logout error:', error);
     } finally {
       removeAuthToken();
+      localStorage.removeItem('authUser');
       setUser(null);
     }
   };
 
   const updateUser = (userData: Partial<User>) => {
-    setUser(prev => prev ? { ...prev, ...userData } : null);
+    setUser(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, ...userData } as User;
+      localStorage.setItem('authUser', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const value: AuthContextType = {
